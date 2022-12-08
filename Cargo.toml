@@ -1,0 +1,28 @@
+[package]
+name = "async-runtime"
+description = ""
+repository = ""
+license = "MIT OR Apache-2.0"
+authors = ["Dustin Yost <dustin.yost.t@gmail.com>"]
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# [metrics] for getting performance information and rendering via any chosen viewer
+profiling = "1.0"
+# [metrics] for writing runtime information to log file/console
+log = "0.4"
+
+# [async] base async traits
+futures = "0.3"
+# [async] adv async traits
+futures-util = "0.3"
+# [async] async/await syntax and multithreading
+tokio = { version = "1.15", features = ["full"] }
+# [async] helper for getting the number of CPS for multithreading
+num_cpus = "1.8"
+
+# [error] collapsing any error into one result type
+anyhow = "1.0"
+# [error] easy implementation of new errors
+thiserror = "1.0"

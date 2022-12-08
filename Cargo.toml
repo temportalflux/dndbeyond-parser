@@ -1,0 +1,13 @@
+[package]
+name = "log-base"
+description = ""
+repository = ""
+license = "MIT OR Apache-2.0"
+authors = ["Dustin Yost <dustin.yost.t@gmail.com>"]
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+simplelog = "0.11"
+log = "0.4"
+anyhow = "1.0"

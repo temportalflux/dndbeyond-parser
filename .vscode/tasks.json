@@ -1,0 +1,60 @@
+{
+	// See https://go.microsoft.com/fwlink/?LinkId=733558
+	// for the documentation about the tasks.json format
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "1. Compile",
+			"command": "cargo",
+			"args": [
+				"build"
+			],
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "2. Format",
+			"command": "cargo",
+			"args": [
+				"fmt"
+			],
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "3. Run",
+			"command": "cargo",
+			"args": [
+				"run"
+			],
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "4. Clean",
+			"command": "cargo",
+			"args": [
+				"clean"
+			],
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "5. Run Tests",
+			"command": "cargo",
+			"args": [
+				"test"
+			],
+			"problemMatcher": []
+		},
+		{
+			"label": "6. Release",
+			"command": "cargo",
+			"args": [
+				"build", "--release"
+			],
+			"group": "build",
+			"problemMatcher": []
+		}
+	]
+}

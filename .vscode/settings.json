@@ -1,0 +1,8 @@
+{
+	"editor.insertSpaces": false,
+	"editor.tabSize": 2,
+	"task.quickOpen.history": 0,
+	"explorer.sortOrder": "mixed",
+	"terminal.integrated.defaultProfile.windows": "Git Bash",
+	"editor.detectIndentation": false
+}

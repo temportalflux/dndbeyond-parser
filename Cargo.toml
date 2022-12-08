@@ -1,0 +1,35 @@
+[package]
+name = "dndscrape"
+description = ""
+repository = ""
+license = "MIT OR Apache-2.0"
+authors = ["Dustin Yost <dustin.yost.t@gmail.com>"]
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-runtime = { path = "../async-runtime" }
+log-base = { path = "../log-base" }
+
+# [metrics] for writing runtime information to log file/console
+log = "0.4"
+
+# [error] collapsing any error into one result type
+anyhow = "1.0"
+# [error] easy implementation of new errors
+thiserror = "1.0"
+
+# [async] base async traits
+futures = "0.3"
+# [async] adv async traits
+futures-util = "0.3"
+tokio = "1.15"
+async-channel = "1.6"
+
+scraper = "0.13"
+reqwest = { version = "0.11", features = [ "default-tls", "cookies" ]}
+select = "0.5"
+regex = "1.6"
+verbal_expr = { git = "https://github.com/temportalflux/verbalexpressions-rs", branch = "updates", package = "verex" }
+
+sea-orm = { version = "^0", features = [ "sqlx-sqlite", "runtime-tokio-rustls", "macros" ] }

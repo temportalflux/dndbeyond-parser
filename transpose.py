@@ -22,11 +22,13 @@ class CreatureParser:
   def parse(self) -> 'Creature':
     creature = Creature()
     creature.image_url = self.image_url()
+    creature.capabilities = {}
 
     creature.environment_tags = list()
     tags = self.info.find('footer').find('p', class_='tags')
-    for span in tags.find_all('span', class_='environment-tag'):
-      creature.environment_tags.append(str(span.string))
+    if tags is not None:
+      for span in tags.find_all('span', class_='environment-tag'):
+        creature.environment_tags.append(str(span.string))
 
     content = self.info.find(class_='detail-content')
     if 'Stat Block':
@@ -83,13 +85,6 @@ class CreatureParser:
           item = item.find(class_='ability-block__data').find(class_='ability-block__score')
           creature.ability_scores[stat] = int(item.string)
       if 'Tidbits':
-        # > .mon-stat-block__tidbits
-        #   > .mon-stat-block__tidbit (list)
-        #     > .mon-stat-block__tidbit-label > text = [saving throws / sense/ skills / languages]
-        #     > .mon-stat-block__tidbit-data > text (stripped) = [value]
-        #   > .mon-stat-block__tidbit-container > .mon-stat-block__tidbit (list)
-        #     > .mon-stat-block__tidbit-label > text = [cr / profbonus]
-        #     > .mon-stat-block__tidbit-data > text (stripped) = [value]
         tidbits = stat_block.find(class_='mon-stat-block__tidbits')
         container = tidbits.find(class_='mon-stat-block__tidbit-container')
         all_tidbits = tidbits.find_all(class_='mon-stat-block__tidbit') + container.find_all(class_='mon-stat-block__tidbit')
@@ -119,6 +114,10 @@ class CreatureParser:
               else:
                 matched = re_prefixed_dist.match(sense.strip())
                 creature.senses[matched.group('name')] = (int(matched.group('amount')), 'ft')
+          # TODO: Damage Immunities
+          # TODO: Damage Resistances
+          # TODO: Damage Vulnerabilities
+          # TODO: Condition Immunities
           elif label == "Languages":
             creature.languages = {}
             for lang_dist in data.split(','):
@@ -135,14 +134,32 @@ class CreatureParser:
           else:
             print(f"[WARN] Missing support for tidbit named '{label}', value = '{data}'")
       if 'Description Blocks':
-        # > .mon-stat-block__description-blocks > .mon-stat-block__description-block (list)
-        #   > .mon-stat-block__description-block-heading > text = [section]
-        #   > .mon-stat-block__description-block-content > p (list)
-        #     > em > strong > text = [property label]
-        #     > text OR OTHER PARSER = [property description]
-        #     this block is especially context dependent, because there is text at all layers
-        pass
-
+        all_desc_blocks = stat_block.find(class_='mon-stat-block__description-blocks')
+        for desc_block in all_desc_blocks.find_all(class_='mon-stat-block__description-block'):
+          desc_block: Tag = desc_block
+          section = desc_block.find(class_='mon-stat-block__description-block-heading')
+          if section is not None:
+            section = section.string.strip()
+          if section is None:
+            desc_kind = Capability
+            section = "General"
+          elif section == 'Actions':
+            desc_kind = Action
+          elif section == 'Legendary Actions':
+            desc_kind = LegendaryAction
+          else:
+            print(f'[WARN] Missing support for description block section "{section}"')
+            continue
+          
+          entries = []
+          content = desc_block.find(class_='mon-stat-block__description-block-content')
+          for item in content.find_all('p'):
+            capability = desc_kind.parse(item)
+            if capability.name is None:
+              entries[-1].append(capability)
+            else:
+              entries.append(capability)
+          creature.capabilities[section] = entries
 
     lore_content = content.find(class_='more-info-content')
 
@@ -165,6 +182,7 @@ class Creature:
   languages: Dict[str, int | None]
   challenge_rating: Tuple[int, int]
   proficiency_bonus: int
+  capabilities: Dict[str, List['Capability']]
   environment_tags: List[str]
 
   def to_kdl(self) -> Node:
@@ -185,8 +203,10 @@ class Creature:
       Node("languages", None, children=self.languages_kdl()),
       Node("challenge_rating", None, arguments=[self.challenge_rating[0]], properties={'xp': self.challenge_rating[1]}),
       Node("proficiency_bonus", None, arguments=[self.proficiency_bonus]),
-      Node("environments", None, arguments=self.environment_tags),
+      Node("capabilities", None, children=self.capabilities_kdl()),
     ]
+    if len(self.environment_tags) > 0:
+      children.append(Node("environments", None, arguments=self.environment_tags))
     return Node("creature", "Creature", children=children)
   
   def speed_kdl(self) -> Node:
@@ -210,13 +230,146 @@ class Creature:
 
   def languages_kdl(self) -> List[Node]:
    return [Node(name, None, properties=({'range': dist, 'unit': 'ft'} if dist is not None else {})) for (name, dist) in self.languages.items()]
+  
+  def capabilities_kdl(self) -> List[Node]:
+    nodes = []
+    for (section, entries) in self.capabilities.items():
+      capabilities = []
+      for entry in entries:
+        capabilities.append(entry.to_kdl())
+      nodes.append(Node(section, None, children=capabilities))
+    return nodes
+
+class Capability:
+  name: str
+  description: str
+  frequency: str | None
+
+  def parse(item: Tag) -> 'Capability':
+    return Capability.read_item(item)
+  
+  def append(self, other: 'Capability'):
+    pass
+  
+  def get_name(item: Tag) -> str | None:
+    name = None
+    emphasis = item.find('em')
+    if emphasis is not None:
+      name = emphasis.find('strong')
+    else:
+      name = item.find('strong')
+    if name is not None:
+      name = name.get_text().strip().removesuffix('.')
+    return name
+  
+  def read_item(item: Tag) -> 'Capability':
+    ability = Capability()
+    ability.description = item.get_text()
+    ability.name = Capability.get_name(item)
+    ability.frequency = None
+    if ability.name is not None:
+      ability.description = ability.description.removeprefix(ability.name)
+    ability.description = ability.description.removeprefix('.').strip()
+    if ability.name is not None:
+      matched = re.match(r'(?P<name>[a-zA-Z ]*) \((?P<usage>.*)\).*', ability.name)
+      if matched is not None:
+        ability.name = matched.group('name')
+        ability.frequency = matched.group('usage')
+    return ability
+
+  def to_kdl(self) -> Node:
+    args = [self.description]
+    children = []
+    if self.frequency is not None:
+      children.append(Node("frequency", None, arguments=[self.frequency]))
+    return Node(self.name, None, arguments=args, children=children)
+
+re_attack = re.compile(r'(?P<kind>.*) Attack: \+(?P<bonus>[0-9]*) to hit, reach (?P<range>[0-9]*) ft\.,? (?P<target_amt>[^\.]*)\. Hit: (?P<damage>.*)\.(?P<effect>.*)')
+class Action(Capability):
+  def parse(item: Tag) -> 'Capability':
+    ability = Capability.read_item(item)
+
+    matched_atk = re_attack.match(ability.description)
+    if matched_atk is not None:
+      attack = Attack()
+      attack.name = ability.name
+      attack.frequency = ability.frequency
+      attack.kind = matched_atk.group('kind')
+      attack.atk_bonus = matched_atk.group('bonus')
+      attack.range = matched_atk.group('range')
+      attack.target_amount = matched_atk.group('target_amt')
+      attack.damage = matched_atk.group('damage')
+      attack.description = matched_atk.group('effect').strip()
+      if attack.description == '':
+        attack.description = None
+      return attack
+    else:
+      action = Action()
+      action.name = ability.name
+      action.description = ability.description
+      action.frequency = ability.frequency
+      return action
+  
+  def append(self, other: 'Action'):
+    self.description += f'\n{other.description}'
+
+class Attack(Action):
+  kind: str
+  atk_bonus: int
+  range: int
+  target_amount: str
+  damage: str
+
+  def to_kdl(self) -> Node:
+    props = {
+      'kind': self.kind,
+      'attack-bonus': self.atk_bonus,
+      'target': self.target_amount,
+    }
+    children = []
+    if self.frequency is not None:
+      children.append(Node("frequency", None, arguments=[self.frequency]))
+    children.append(Node("range", None, arguments=[self.range], properties={'unit': 'ft'}))
+    children.append(Node("damage", None, arguments=[self.damage]))
+    if self.description is not None:
+      children.append(Node("effect", None, arguments=[self.description]))
+    return Node(self.name, "Attack", properties=props, children=children)
+
+class LegendaryAction(Action):
+  cost: int | None
+
+  def parse(item: Tag) -> 'Capability':
+    ability = Capability.read_item(item)
+    action = LegendaryAction()
+    action.name = ability.name
+    action.description = ability.description
+    action.frequency = ability.frequency
+
+    if action.name is None:
+      action.name = "General"
+
+    action.cost = None
+    cost_match = re.match(r'\(Costs (?P<cost>[0-9]*) Actions\)\. (?P<effect>.*)', action.description)
+    if cost_match is not None:
+      action.cost = int(cost_match.group('cost'))
+      action.description = cost_match.group('effect').strip()
+
+    return action
+  
+  def to_kdl(self) -> Node:
+    node = super().to_kdl()
+    if self.cost is not None:
+      node.properties['cost'] = self.cost
+    return node
 
 import cuddle
 from pathlib import Path
 
-path = Path('monsters/16762-aboleth.html')
-with open(path, 'r', encoding="utf-8") as file:
-  html = file.read()
-parser = CreatureParser(html)
-creature = parser.parse()
-print(cuddle.dumps(cuddle.NodeList([creature.to_kdl()])))
+examples = ['16762-aboleth', '2821213-young-solar-dragon']
+for ex in examples:
+  path = Path(f'monsters/{ex}.html')
+  with open(path, 'r', encoding="utf-8") as file:
+    html = file.read()
+  parser = CreatureParser(html)
+  creature = parser.parse()
+  print(cuddle.dumps(cuddle.NodeList([creature.to_kdl()])))

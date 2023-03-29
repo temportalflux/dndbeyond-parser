@@ -1,3 +1,4 @@
+use clap::Parser;
 use std::sync::Arc;
 
 use creature::Creature;
@@ -25,7 +26,59 @@ fn main() -> anyhow::Result<()> {
 	runtime.block_on(async { run().await })
 }
 
+#[derive(Parser, Debug)]
+enum Cli {
+	Fetch,
+}
+
 async fn run() -> anyhow::Result<()> {
+	Cli::parse().run().await
+}
+
+impl Cli {
+	async fn run(&self) -> anyhow::Result<()> {
+		match self {
+			Self::Fetch => {
+				tokio::fs::create_dir_all("html").await?;
+
+				let worker_tasks;
+				{
+					let provider = Arc::new(WebpageProvider::new().await?);
+					// The number of worker tasks spawned here is the number of
+					// webpage fetch/get requests that can be processed in parallel.
+					worker_tasks = provider.spawn_workers(10);
+
+					let (pages, errors) =
+						CreatureListing::fetch_pages(provider, Some(0..1)).await?;
+					for err in errors.into_iter() {
+						log::error!("{err:?}");
+					}
+
+					// Now parse each page and find all of the creature listings
+					for (_url, body) in pages.into_iter() {
+						log::debug!("{body:?}");
+						let page = dndbeyond::creature_list::CreatureListingPage::from(&body);
+						let list_elements = page.list().children();
+						for element in list_elements.into_iter() {
+							let url_path = element.title_block().name_link().url();
+							log::debug!("{url_path:?}");
+						}
+					}
+				};
+
+				// Technically, if all the work has finished, then these tasks could be dropped without caring
+				// if the channels still exist (because they are garunteed to be empty).
+				// For the sake of consistency, we stitch the worker tasks back into main thread.
+				// If this hangs, its because the sender channel for the requests still exists (it lives in the WebpageProvider).
+				futures::future::join_all(worker_tasks).await;
+
+				Ok(())
+			}
+		}
+	}
+}
+
+async fn run_old() -> anyhow::Result<()> {
 	let worker_tasks;
 	let creatures;
 	{

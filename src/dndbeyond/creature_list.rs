@@ -72,7 +72,12 @@ impl PageIter {
 	}
 }
 
-struct CreatureListingPage(scraper::Html);
+pub struct CreatureListingPage(scraper::Html);
+impl From<&String> for CreatureListingPage {
+	fn from(body: &String) -> Self {
+		Self(scraper::Html::parse_document(body))
+	}
+}
 impl CreatureListingPage {
 	pub fn list<'doc>(&'doc self) -> CreatureList<'doc> {
 		let s_primary_content = scraper::Selector::parse(
@@ -88,7 +93,7 @@ impl CreatureListingPage {
 	}
 }
 
-struct CreatureList<'doc>(scraper::ElementRef<'doc>);
+pub struct CreatureList<'doc>(scraper::ElementRef<'doc>);
 impl<'doc> CreatureList<'doc> {
 	pub fn children(&self) -> Vec<CreatureRowHtml<'doc>> {
 		let s_info = scraper::Selector::parse(r#".info"#).unwrap();
@@ -96,7 +101,7 @@ impl<'doc> CreatureList<'doc> {
 	}
 }
 
-struct CreatureRowHtml<'doc>(scraper::ElementRef<'doc>);
+pub struct CreatureRowHtml<'doc>(scraper::ElementRef<'doc>);
 impl<'doc> From<scraper::ElementRef<'doc>> for CreatureRowHtml<'doc> {
 	fn from(html: scraper::ElementRef<'doc>) -> Self {
 		Self(html)
@@ -128,7 +133,7 @@ impl<'doc> CreatureRowHtml<'doc> {
 	}
 }
 
-struct TitleBlock<'doc>(scraper::ElementRef<'doc>);
+pub struct TitleBlock<'doc>(scraper::ElementRef<'doc>);
 impl<'doc> TitleBlock<'doc> {
 	pub fn expand(self) -> (String, String, PathBuf) {
 		let source_book = self.source_book();
@@ -148,7 +153,7 @@ impl<'doc> TitleBlock<'doc> {
 	}
 }
 
-struct TitleBlockNameLink<'doc>(scraper::ElementRef<'doc>);
+pub struct TitleBlockNameLink<'doc>(scraper::ElementRef<'doc>);
 impl<'doc> TitleBlockNameLink<'doc> {
 	pub fn name(&self) -> String {
 		self.0.inner_html()
@@ -240,5 +245,30 @@ impl CreatureListing {
 		}
 		futures::future::join_all(parsing_tasks).await;
 		Ok(())
+	}
+
+	pub async fn fetch_pages(
+		provider: Arc<WebpageProvider>,
+		page_range: Option<Range<usize>>,
+	) -> anyhow::Result<(Vec<(reqwest::Url, String)>, Vec<anyhow::Error>)> {
+		let mut parsing_tasks = Vec::new();
+
+		let mut page_iter = match page_range {
+			Some(range) => PageIter::with_range(range),
+			None => PageIter::new(0, provider.clone()).await?,
+		};
+
+		// Iterate over all of the pages that exist
+		while let Some(url_string) = page_iter.next() {
+			let async_provider = provider.clone();
+			parsing_tasks.push(tokio::task::spawn(async move {
+				let url = reqwest::Url::parse(&url_string)?;
+				let response = async_provider.fetch(url.clone())?.await?;
+				let body = response.text().await?;
+				Ok((url, body)) as anyhow::Result<(reqwest::Url, String)>
+			}));
+		}
+
+		Ok(async_runtime::join_all(parsing_tasks).await?)
 	}
 }
